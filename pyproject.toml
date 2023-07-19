@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "gulf-id-scanner"
+version = "0.1.0"
+description = ""
+authors = ["Rami Mousleh <engrbm87@gmail.com>"]
+readme = "README.md"
+packages = [{include = "gulf_id_scanner"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+websockets = "^11.0.3"
+aiohttp = "^3.8.4"
+orjson = "^3.9.2"
+
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.0.278"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
