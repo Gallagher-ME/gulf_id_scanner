@@ -1,17 +1,18 @@
 """Classes for card data."""
 
 from __future__ import annotations
+
 import base64
-from datetime import datetime
 import json
 import random
 import string
-from typing import Any
 import xml.etree.ElementTree as ET
-from dataclasses import InitVar, dataclass, field, fields
-from enum import IntEnum
 from collections.abc import Callable
-from attr import asdict
+from dataclasses import dataclass, field, fields
+from datetime import datetime
+from enum import IntEnum
+
+from typing_extensions import Self
 
 NS = {"ns": "http://www.emiratesid.ae/toolkit"}
 # library command classes
@@ -84,17 +85,19 @@ class EIDRequest:
         self.request: dict[str, str] = {"service_context": context.service_context}
 
     def list_readers(self) -> dict[str, str]:
+        """List connected readers."""
         request = self.request.copy()
         request["cmd"] = CMD.LIST_READERS
         return request
 
     def reader_with_eid(self) -> dict[str, str]:
+        """Request reader with EID inserted."""
         request = self.request.copy()
         request["cmd"] = CMD.GET_READER_WITH_EID
         return request
 
     def connect_to_reader(self, reader_name: str) -> dict[str, str]:
-        """Connect to reader."""
+        """Connect to selected reader."""
         request = self.request.copy()
         request["cmd"] = CMD.CONNECT_READER
         request["smartcard_reader"] = reader_name
@@ -119,31 +122,22 @@ class EIDRequest:
         return request
 
 
-@dataclass
-class GCCIDRequest:
-    """Gulf ID read request."""
+# EID Card data classes
+class BaseClass:
+    """Base class for card data classes."""
 
-    ReadCardInfo: bool = True
-    ReadPersonalInfo: bool = True
-    ReadAddressDetails: bool = True
-    ReadBiometrics: bool = True
-    ReadEmploymentInfo: bool = True
-    ReadImmigrationDetails: bool = True
-    ReadTrafficDetails: bool = True
-    ReaderName: str = ""
-    ReaderIndex: int = -1
-    OutputFormat: str = "JSON"
-    ValidateCard: bool = False
-    SilentReading: bool = True
-
-    def __repr__(self) -> str:
-        """Return request string."""
-        return f"ReadCard{json.dumps(self.__dict__)}"
+    @classmethod
+    def from_xml_element(cls, root: ET.Element) -> Self:
+        """Construct class from xml element."""
+        _cls = object.__new__(cls)
+        for cls_field in fields(_cls):
+            element = root.find(f".ns:{cls_field.name}", NS)
+            setattr(_cls, cls_field.name, element.text)
+        return _cls
 
 
-# Card data classes
 @dataclass(init=False)
-class NonModifiableData:
+class NonModifiableData(BaseClass):
     IdType: str
     IssueDate: str
     ExpiryDate: str
@@ -159,18 +153,9 @@ class NonModifiableData:
     PlaceOfBirthArabic: str
     PlaceOfBirthEnglish: str
 
-    @classmethod
-    def from_xml_element(cls, root: ET.Element) -> NonModifiableData:
-        """Construct class from xml element."""
-        _cls = NonModifiableData()
-        for cls_field in fields(_cls):
-            element = root.find(f".ns:{cls_field.name}", NS)
-            setattr(_cls, cls_field.name, element.text)
-        return _cls
-
 
 @dataclass(init=False)
-class ModifiableData:
+class ModifiableData(BaseClass):
     OccupationCode: str
     OccupationArabic: str
     OccupationEnglish: str
@@ -209,18 +194,9 @@ class ModifiableData:
     MotherFullNameArabic: str
     MotherFullNameEnglish: str
 
-    @classmethod
-    def from_xml_element(cls, root: ET.Element) -> ModifiableData:
-        """Construct class from xml element."""
-        _cls = ModifiableData()
-        for cls_field in fields(_cls):
-            element = root.find(f".ns:{cls_field.name}", NS)
-            setattr(_cls, cls_field.name, element.text)
-        return _cls
-
 
 @dataclass(init=False)
-class HomeAddress:
+class HomeAddress(BaseClass):
     AddressTypeCode: str
     LocationCode: str
     EmiratesCode: str
@@ -242,18 +218,9 @@ class HomeAddress:
     MobilePhoneNumber: str
     Email: str
 
-    @classmethod
-    def from_xml_element(cls, root: ET.Element) -> HomeAddress:
-        """Construct class from xml element."""
-        _cls = HomeAddress()
-        for cls_field in fields(_cls):
-            element = root.find(f".ns:{cls_field.name}", NS)
-            setattr(_cls, cls_field.name, element.text)
-        return _cls
-
 
 @dataclass(init=False)
-class WorkAddress:
+class WorkAddress(BaseClass):
     AddressTypeCode: str
     LocationCode: str
     CompanyNameArabic: str
@@ -277,15 +244,6 @@ class WorkAddress:
     LandPhoneNumber: str
     MobilePhoneNumber: str
     Email: str
-
-    @classmethod
-    def from_xml_element(cls, root: ET.Element) -> WorkAddress:
-        """Construct class from xml element."""
-        _cls = WorkAddress()
-        for cls_field in fields(_cls):
-            element = root.find(f".ns:{cls_field.name}", NS)
-            setattr(_cls, cls_field.name, element.text)
-        return _cls
 
 
 @dataclass
@@ -321,6 +279,29 @@ class EIDCardData:
             CardHolderPhoto=root.find(".//ns:CardHolderPhoto", NS).text,
             HolderSignatureImage=root.find(".//ns:HolderSignatureImage", NS).text,
         )
+
+
+# GCC ID related classes
+@dataclass
+class GCCIDRequest:
+    """Gulf ID read request."""
+
+    ReadCardInfo: bool = True
+    ReadPersonalInfo: bool = True
+    ReadAddressDetails: bool = True
+    ReadBiometrics: bool = True
+    ReadEmploymentInfo: bool = True
+    ReadImmigrationDetails: bool = True
+    ReadTrafficDetails: bool = True
+    ReaderName: str = ""
+    ReaderIndex: int = -1
+    OutputFormat: str = "JSON"
+    ValidateCard: bool = False
+    SilentReading: bool = True
+
+    def __repr__(self) -> str:
+        """Return request string."""
+        return f"ReadCard{json.dumps(self.__dict__)}"
 
 
 @dataclass
@@ -644,7 +625,7 @@ CARDDATA_FIELDS: tuple[CardDataField, ...] = (
     CardDataField(
         name="PassportIssueDate",
         value_fn=lambda val: datetime.strptime(
-            val.ModifiableData.PassportIssueDate
+            val.ModifiableData.PassportIssueDate  # TODO check if value is not there
             if isinstance(val, EIDCardData)
             else val.PassportIssueDate,
             "%d/%m/%Y",
