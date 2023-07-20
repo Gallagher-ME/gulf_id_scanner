@@ -1,6 +1,5 @@
 """Websocket client for Emirates ID."""
 
-import asyncio
 import json
 import logging
 from enum import Enum
@@ -17,9 +16,8 @@ from .exceptions import (
 from .models import (
     CardData,
     EIDCardData,
-    EIDRequest,
+    Request,
     GCCIDCardData,
-    GCCIDRequest,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,7 +52,7 @@ class Client:
         self.gcc_id_url = f"ws{'s' if use_ssl else ''}://{host}:{gcc_ws_port}/SCardRead"
         self.ssl = use_ssl
         self.web_session = web_session
-        self.request = EIDRequest()
+        self.request = Request()
         self.eid_ws_state = ServiceState.DISCONNECTED
         self.gcc_ws_state = ServiceState.DISCONNECTED
 
@@ -115,14 +113,13 @@ class Client:
         if self.eid_ws_state == ServiceState.DISCONNECTED:
             raise ServiceDisconnected("EID service is disconnected.")
         try:
-            response = await self._async_eid_request(self.request.reader_with_eid())
+            response = await self._async_eid_request(self.request.reader_with_eid)
         except ServiceDisconnected:
             return False
         if response["status"] != "success":
             return False
-        response = await self._async_eid_request(
-            self.request.connect_to_reader(response["smartcard_reader"])
-        )
+        self.request.context.card_reader_name = response["smartcard_reader"]
+        response = await self._async_eid_request(self.request.connect_to_reader)
         self.request.context.eid_card_context = response["card_context"]
         self.eid_ws_state = ServiceState.READY
         return True
@@ -152,7 +149,7 @@ class Client:
         if self.eid_ws_state == ServiceState.DISCONNECTED:
             try:
                 response: dict[str, Any] = await self._async_eid_request(
-                    EIDRequest.establish_context()
+                    Request.establish_context()
                 )
                 if response.get("status") == "success":
                     self.request.context.service_context = response["service_context"]
@@ -170,9 +167,8 @@ class Client:
             if not await self._connect_reader_with_eid():
                 _LOGGER.debug("No EID smart card detected.")
                 return None
-        await asyncio.sleep(10)
         try:
-            response = await self._async_eid_request(self.request.read_card_data())
+            response = await self._async_eid_request(self.request.read_eid_card)
         except ServiceDisconnected as err:
             raise ReadError("Failed to read EID card.") from err
         if response["status"] != "success":
@@ -186,9 +182,9 @@ class Client:
             if not await self._connect_reader_with_gccid():
                 raise ReaderNotFound("No compatible reader detected.")
 
-        request = GCCIDRequest()
-        request.ReaderName = self.request.context.card_reader_name
-        response = cast(dict[str, Any], await self._async_gcc_id_request(str(request)))
+        response = cast(
+            dict[str, Any], await self._async_gcc_id_request(self.request.read_gcc_card)
+        )
         if response["MessageType"] == "Error":
             raise ReadError("Failed to read GCC card: %s", response["ErrorDescription"])
         return GCCIDCardData(**response["CardData"])
@@ -197,11 +193,12 @@ class Client:
         """Return data from Gulf ID card."""
         card_data: EIDCardData | GCCIDCardData | None = None
         if self.eid_ws_state != ServiceState.UNAVAILABLE:
-            card_data = await self._read_eid_card_data()
-        if card_data is None and self.gcc_ws_state != ServiceState.UNAVAILABLE:
-            if card_data := await self._read_gcc_card_data():
+            if card_data := await self._read_eid_card_data():
                 return CardData(card_data)
-        raise ReadError("Can't read inserted card")
+        if self.gcc_ws_state == ServiceState.UNAVAILABLE:
+            raise ReadError("Can't read inserted card")
+        card_data = await self._read_gcc_card_data()
+        return CardData(card_data)
 
     async def async_detect_card(
         self,
