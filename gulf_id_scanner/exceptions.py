@@ -5,8 +5,8 @@ class ServiceError(Exception):
     """Base class error."""
 
 
-class ConnectError(Exception):
-    """Error connecting to scanner server."""
+class ReaderNotFound(ServiceError):
+    """ٌRaise error if no compatible reader found."""
 
 
 class ReadError(ServiceError):

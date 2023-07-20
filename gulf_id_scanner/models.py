@@ -8,16 +8,17 @@ import random
 import string
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from dataclasses import dataclass, field, fields
+from dataclasses import InitVar, dataclass, field, fields
 from datetime import datetime
 from enum import IntEnum
+from typing import Any
 
 from typing_extensions import Self
 
 NS = {"ns": "http://www.emiratesid.ae/toolkit"}
+
+
 # library command classes
-
-
 class CMD(IntEnum):
     """List of commands."""
 
@@ -44,21 +45,6 @@ class CMD(IntEnum):
     CARD_GENUINE = 24
     GET_READER_WITH_EID = 54
 
-    def __str__(self):
-        return str(self.value)
-
-
-@dataclass(frozen=True)
-class EstablishContext:
-    """Establish context request."""
-
-    cmd: CMD = CMD.ESTABLISH_CONTEXT.value
-    config_params: str = ""
-    user_agent: str = "Chrome 114.0.0.0"
-
-    def __str__(self):
-        return repr(self.__dict__)
-
 
 @dataclass
 class EIDContext:
@@ -69,7 +55,7 @@ class EIDContext:
     card_reader_name: str = ""
     request_id: str = ""
 
-    def gen_request_id(self) -> str:
+    def gen_request_id(self) -> None:
         """Generate a new request_id."""
         letters = string.ascii_letters + string.digits
         random_str = "".join(random.choice(letters) for _ in range(40))
@@ -79,31 +65,42 @@ class EIDContext:
 class EIDRequest:
     """Reqeust base class."""
 
-    def __init__(self, context: EIDContext) -> None:
+    def __init__(self) -> None:
         """Initialize request object."""
-        self.context = context
-        self.request: dict[str, str] = {"service_context": context.service_context}
+        self.context = EIDContext()
+        self.request: dict[str, str | int] = {
+            "service_context": self.context.service_context
+        }
 
-    def list_readers(self) -> dict[str, str]:
+    @classmethod
+    def establish_context(cls) -> dict[str, str | int]:
+        """Request to establish context."""
+        return {
+            "cmd": CMD.ESTABLISH_CONTEXT.value,
+            "config_params": "",
+            "user_agent": "Chrome 114.0.0.0",
+        }
+
+    def list_readers(self) -> dict[str, str | int]:
         """List connected readers."""
         request = self.request.copy()
         request["cmd"] = CMD.LIST_READERS
         return request
 
-    def reader_with_eid(self) -> dict[str, str]:
+    def reader_with_eid(self) -> dict[str, str | int]:
         """Request reader with EID inserted."""
         request = self.request.copy()
         request["cmd"] = CMD.GET_READER_WITH_EID
         return request
 
-    def connect_to_reader(self, reader_name: str) -> dict[str, str]:
+    def connect_to_reader(self, reader_name: str) -> dict[str, str | int]:
         """Connect to selected reader."""
         request = self.request.copy()
         request["cmd"] = CMD.CONNECT_READER
         request["smartcard_reader"] = reader_name
         return request
 
-    def read_card_data(self) -> dict[str, str]:
+    def read_card_data(self) -> dict[str, str | int]:
         """Read card data."""
         request = self.request.copy()
         self.context.gen_request_id()
@@ -123,6 +120,7 @@ class EIDRequest:
 
 
 # EID Card data classes
+@dataclass
 class BaseClass:
     """Base class for card data classes."""
 
@@ -131,8 +129,8 @@ class BaseClass:
         """Construct class from xml element."""
         _cls = object.__new__(cls)
         for cls_field in fields(_cls):
-            element = root.find(f".ns:{cls_field.name}", NS)
-            setattr(_cls, cls_field.name, element.text)
+            if element := root.find(f".ns:{cls_field.name}", NS):
+                setattr(_cls, cls_field.name, element.text)
         return _cls
 
 
@@ -234,8 +232,6 @@ class WorkAddress(BaseClass):
     StreetArabic: str
     StreetEnglish: str
     POBOX: str
-    StreetArabic: str
-    StreetEnglish: str
     AreaCode: str
     AreaDescArabic: str
     AreaDescEnglish: str
@@ -248,37 +244,60 @@ class WorkAddress(BaseClass):
 
 @dataclass
 class EIDCardData:
-    IdNumber: str
-    CardNumber: str
-    NonModifiableData: NonModifiableData
-    ModifiableData: ModifiableData
-    HomeAddress: HomeAddress
-    WorkAddress: WorkAddress
-    CardHolderPhoto: str
-    HolderSignatureImage: str
+    xml_data: InitVar[str]
+    IdNumber: str | None = field(init=False)
+    CardNumber: str | None = field(init=False)
+    NonModifiableData: NonModifiableData = field(init=False)
+    ModifiableData: ModifiableData = field(init=False)
+    HomeAddress: HomeAddress = field(init=False)
+    WorkAddress: WorkAddress = field(init=False)
+    CardHolderPhoto: str | None = field(init=False)
+    HolderSignatureImage: str | None = field(init=False)
 
-    @classmethod
-    def from_xml(cls, data: str) -> EIDCardData:
-        """Construct class from xml data."""
-        root = ET.fromstring(data)
-        return EIDCardData(
-            IdNumber=root.find(".//ns:IdNumber", NS).text,
-            CardNumber=root.find(".//ns:CardNumber", NS).text,
-            NonModifiableData=NonModifiableData.from_xml_element(
-                root.find(".//ns:NonModifiableData", NS)
-            ),
-            ModifiableData=ModifiableData.from_xml_element(
-                root.find(".//ns:ModifiableData", NS)
-            ),
-            HomeAddress=HomeAddress.from_xml_element(
-                root.find(".//ns:HomeAddress", NS)
-            ),
-            WorkAddress=WorkAddress.from_xml_element(
-                root.find(".//ns:WorkAddress", NS)
-            ),
-            CardHolderPhoto=root.find(".//ns:CardHolderPhoto", NS).text,
-            HolderSignatureImage=root.find(".//ns:HolderSignatureImage", NS).text,
-        )
+    def __post_init__(self, xml_data: str) -> None:
+        """Fill attribute values from xml_data."""
+        root = ET.fromstring(xml_data)
+        if idNumber := root.find(".//ns:IdNumber", NS):
+            self.IdNumber = idNumber.text
+        if cardNumber := root.find(".//ns:CardNumber", NS):
+            self.CardNumber = cardNumber.text
+        if nonModifiableData := root.find(".//ns:NonModifiableData", NS):
+            self.NonModifiableData = NonModifiableData.from_xml_element(
+                nonModifiableData
+            )
+        if modifiableData := root.find(".//ns:ModifiableData", NS):
+            self.ModifiableData = ModifiableData.from_xml_element(modifiableData)
+        if homeAddress := root.find(".//ns:HomeAddress", NS):
+            self.HomeAddress = HomeAddress.from_xml_element(homeAddress)
+        if workAddress := root.find(".//ns:WorkAddress", NS):
+            self.WorkAddress = WorkAddress.from_xml_element(workAddress)
+        if cardHolderPhoto := root.find(".//ns:CardHolderPhoto", NS):
+            self.CardHolderPhoto = cardHolderPhoto.text
+        if holderSignatureImage := root.find(".//ns:IdNumber", NS):
+            self.HolderSignatureImage = holderSignatureImage.text
+
+    # @classmethod
+    # def from_xml(cls, data: str) -> EIDCardData:
+    #     """Construct class from xml data."""
+    #     root = ET.fromstring(data)
+    #     return EIDCardData(
+    #         IdNumber=root.find(".//ns:IdNumber", NS).text,
+    #         CardNumber=root.find(".//ns:CardNumber", NS).text,
+    #         NonModifiableData=NonModifiableData.from_xml_element(
+    #             root.find(".//ns:NonModifiableData", NS)
+    #         ),
+    #         ModifiableData=ModifiableData.from_xml_element(
+    #             root.find(".//ns:ModifiableData", NS)
+    #         ),
+    #         HomeAddress=HomeAddress.from_xml_element(
+    #             root.find(".//ns:HomeAddress", NS)
+    #         ),
+    #         WorkAddress=WorkAddress.from_xml_element(
+    #             root.find(".//ns:WorkAddress", NS)
+    #         ),
+    #         CardHolderPhoto=root.find(".//ns:CardHolderPhoto", NS).text,
+    #         HolderSignatureImage=root.find(".//ns:HolderSignatureImage", NS).text,
+    #     )
 
 
 # GCC ID related classes
@@ -453,7 +472,10 @@ class GCCIDCardData:
     ErrorDescription: str
 
     def __post_init__(self) -> None:
-        self.MiscellaneousTextData = MiscellaneousTextData(**self.MiscellaneousTextData)
+        if isinstance(self.MiscellaneousTextData, dict):
+            self.MiscellaneousTextData = MiscellaneousTextData(
+                **self.MiscellaneousTextData
+            )
 
 
 @dataclass
@@ -462,7 +484,7 @@ class CardDataField:
 
     name: str
     value_fn: Callable[  # noqa: E731
-        [EIDCardData | GCCIDCardData], str
+        [EIDCardData | GCCIDCardData], Any
     ] = lambda val: val
 
 
@@ -671,8 +693,6 @@ class CardData:
     PlaceOfBirthEnglish: str = ""
     PlaceOfBirthArabic: str = ""
     OccupationEnglish: str = ""
-    OccupationArabic: str = ""
-    CompanyNameEnglish: str = ""
     OccupationArabic: str = ""
     CompanyNameEnglish: str = ""
     CompanyNameArabic: str = ""

@@ -2,9 +2,7 @@ import asyncio
 
 import aiohttp
 
-from gulf_id_scanner.client import Client
-
-from .execptions import ServiceError
+from gulf_id_scanner import Client, ServiceError
 
 
 async def main() -> None:
@@ -12,10 +10,10 @@ async def main() -> None:
     client = Client(host="192.168.3.45", web_session=session)
     try:
         await client.connect()
-        async for card_data in client.async_detect_card():
-            print(card_data)
+        card_data = await client.async_read_card()
+        print(card_data)
     except ServiceError as err:
-        print(err)
+        print(str(err))
     await session.close()
 
 
