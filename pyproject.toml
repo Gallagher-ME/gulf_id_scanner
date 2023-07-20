@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "gulf-id-scanner"
-version = "0.1.0b0"
+version = "0.1.0b1"
 description = "Python websocket client for reading Gulf IDs"
 authors = ["Rami Mousleh <engrbm87@gmail.com>"]
 readme = "README.md"
