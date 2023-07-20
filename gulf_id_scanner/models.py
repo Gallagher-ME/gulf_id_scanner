@@ -8,16 +8,17 @@ import random
 import string
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from dataclasses import dataclass, field, fields
+from dataclasses import InitVar, dataclass, field, fields
 from datetime import datetime
 from enum import IntEnum
+from typing import Any
 
 from typing_extensions import Self
 
 NS = {"ns": "http://www.emiratesid.ae/toolkit"}
+
+
 # library command classes
-
-
 class CMD(IntEnum):
     """List of commands."""
 
@@ -44,72 +45,73 @@ class CMD(IntEnum):
     CARD_GENUINE = 24
     GET_READER_WITH_EID = 54
 
-    def __str__(self):
-        return str(self.value)
-
-
-@dataclass(frozen=True)
-class EstablishContext:
-    """Establish context request."""
-
-    cmd: CMD = CMD.ESTABLISH_CONTEXT.value
-    config_params: str = ""
-    user_agent: str = "Chrome 114.0.0.0"
-
-    def __str__(self):
-        return repr(self.__dict__)
-
 
 @dataclass
 class EIDContext:
     """class for storing context."""
 
-    service_context: str = ""
+    service_context: int = 0
     eid_card_context: str = ""
     card_reader_name: str = ""
     request_id: str = ""
 
-    def gen_request_id(self) -> str:
+    def gen_request_id(self) -> None:
         """Generate a new request_id."""
         letters = string.ascii_letters + string.digits
         random_str = "".join(random.choice(letters) for _ in range(40))
         self.request_id = base64.b64encode(random_str.encode("utf-8")).decode("utf-8")
 
 
-class EIDRequest:
+class Request:
     """Reqeust base class."""
 
-    def __init__(self, context: EIDContext) -> None:
+    def __init__(self) -> None:
         """Initialize request object."""
-        self.context = context
-        self.request: dict[str, str] = {"service_context": context.service_context}
+        self.context = EIDContext()
 
-    def list_readers(self) -> dict[str, str]:
+    @classmethod
+    def establish_context(cls) -> dict[str, str | int]:
+        """Request to establish context."""
+        return {
+            "cmd": CMD.ESTABLISH_CONTEXT.value,
+            "config_params": "",
+            "user_agent": "Chrome 114.0.0.0",
+        }
+
+    @property
+    def request(self) -> dict[str, str | int]:
+        return {"service_context": self.context.service_context}
+
+    @property
+    def list_readers(self) -> dict[str, str | int]:
         """List connected readers."""
         request = self.request.copy()
-        request["cmd"] = CMD.LIST_READERS
+        request["cmd"] = CMD.LIST_READERS.value
         return request
 
-    def reader_with_eid(self) -> dict[str, str]:
+    @property
+    def reader_with_eid(self) -> dict[str, str | int]:
         """Request reader with EID inserted."""
         request = self.request.copy()
-        request["cmd"] = CMD.GET_READER_WITH_EID
+        request["cmd"] = CMD.GET_READER_WITH_EID.value
         return request
 
-    def connect_to_reader(self, reader_name: str) -> dict[str, str]:
+    @property
+    def connect_to_reader(self) -> dict[str, str | int]:
         """Connect to selected reader."""
         request = self.request.copy()
-        request["cmd"] = CMD.CONNECT_READER
-        request["smartcard_reader"] = reader_name
+        request["cmd"] = CMD.CONNECT_READER.value
+        request["smartcard_reader"] = self.context.card_reader_name
         return request
 
-    def read_card_data(self) -> dict[str, str]:
-        """Read card data."""
+    @property
+    def read_eid_card(self) -> dict[str, str | int]:
+        """Request for reading EID card."""
         request = self.request.copy()
         self.context.gen_request_id()
         request.update(
             {
-                "cmd": CMD.READ_PUBLIC_DATA,
+                "cmd": CMD.READ_PUBLIC_DATA.value,
                 "card_context": self.context.eid_card_context,
                 "read_photography": True,
                 "read_non_modifiable_data": True,
@@ -121,8 +123,20 @@ class EIDRequest:
         )
         return request
 
+    @property
+    def read_gcc_card(self) -> str:
+        """Request for reading GCC card."""
+        params = {
+            "ReaderName": self.context.card_reader_name,
+            "ReaderIndex": -1,
+            "OutputFormat": "JSON",
+            "SilentReading": True,
+        }
+        return f"ReadCard{json.dumps(params)}"
+
 
 # EID Card data classes
+@dataclass
 class BaseClass:
     """Base class for card data classes."""
 
@@ -132,7 +146,8 @@ class BaseClass:
         _cls = object.__new__(cls)
         for cls_field in fields(_cls):
             element = root.find(f".ns:{cls_field.name}", NS)
-            setattr(_cls, cls_field.name, element.text)
+            if element is not None:
+                setattr(_cls, cls_field.name, element.text)
         return _cls
 
 
@@ -234,8 +249,6 @@ class WorkAddress(BaseClass):
     StreetArabic: str
     StreetEnglish: str
     POBOX: str
-    StreetArabic: str
-    StreetEnglish: str
     AreaCode: str
     AreaDescArabic: str
     AreaDescEnglish: str
@@ -248,62 +261,42 @@ class WorkAddress(BaseClass):
 
 @dataclass
 class EIDCardData:
-    IdNumber: str
-    CardNumber: str
-    NonModifiableData: NonModifiableData
-    ModifiableData: ModifiableData
-    HomeAddress: HomeAddress
-    WorkAddress: WorkAddress
-    CardHolderPhoto: str
-    HolderSignatureImage: str
+    xml_data: InitVar[str]
+    IdNumber: str | None = field(init=False)
+    CardNumber: str | None = field(init=False)
+    NonModifiableData: NonModifiableData = field(init=False)
+    ModifiableData: ModifiableData = field(init=False)
+    HomeAddress: HomeAddress = field(init=False)
+    WorkAddress: WorkAddress = field(init=False)
+    CardHolderPhoto: str | None = field(init=False)
+    HolderSignatureImage: str | None = field(init=False)
 
-    @classmethod
-    def from_xml(cls, data: str) -> EIDCardData:
-        """Construct class from xml data."""
-        root = ET.fromstring(data)
-        return EIDCardData(
-            IdNumber=root.find(".//ns:IdNumber", NS).text,
-            CardNumber=root.find(".//ns:CardNumber", NS).text,
-            NonModifiableData=NonModifiableData.from_xml_element(
-                root.find(".//ns:NonModifiableData", NS)
-            ),
-            ModifiableData=ModifiableData.from_xml_element(
-                root.find(".//ns:ModifiableData", NS)
-            ),
-            HomeAddress=HomeAddress.from_xml_element(
-                root.find(".//ns:HomeAddress", NS)
-            ),
-            WorkAddress=WorkAddress.from_xml_element(
-                root.find(".//ns:WorkAddress", NS)
-            ),
-            CardHolderPhoto=root.find(".//ns:CardHolderPhoto", NS).text,
-            HolderSignatureImage=root.find(".//ns:HolderSignatureImage", NS).text,
-        )
+    def __post_init__(self, xml_data: str) -> None:
+        """Fill attribute values from xml_data."""
+        root = ET.fromstring(xml_data)
+        body = root.find(".//ns:PublicData", NS)
+        if body is None:
+            return
+        for child in body:
+            if "IdNumber" in child.tag:
+                self.IdNumber = child.text
+            if "CardNumber" in child.tag:
+                self.CardNumber = child.text
+            if "NonModifiableData" in child.tag:
+                self.NonModifiableData = NonModifiableData.from_xml_element(child)
+            if "ModifiableData" in child.tag:
+                self.ModifiableData = ModifiableData.from_xml_element(child)
+            if "HomeAddress" in child.tag:
+                self.HomeAddress = HomeAddress.from_xml_element(child)
+            if "WorkAddress" in child.tag:
+                self.WorkAddress = WorkAddress.from_xml_element(child)
+            if "CardHolderPhoto" in child.tag:
+                self.CardHolderPhoto = child.text
+            if "HolderSignatureImage" in child.tag:
+                self.HolderSignatureImage = child.text
 
 
 # GCC ID related classes
-@dataclass
-class GCCIDRequest:
-    """Gulf ID read request."""
-
-    ReadCardInfo: bool = True
-    ReadPersonalInfo: bool = True
-    ReadAddressDetails: bool = True
-    ReadBiometrics: bool = True
-    ReadEmploymentInfo: bool = True
-    ReadImmigrationDetails: bool = True
-    ReadTrafficDetails: bool = True
-    ReaderName: str = ""
-    ReaderIndex: int = -1
-    OutputFormat: str = "JSON"
-    ValidateCard: bool = False
-    SilentReading: bool = True
-
-    def __repr__(self) -> str:
-        """Return request string."""
-        return f"ReadCard{json.dumps(self.__dict__)}"
-
-
 @dataclass
 class MiscellaneousTextData:
     FirstNameArabic: str
@@ -453,7 +446,10 @@ class GCCIDCardData:
     ErrorDescription: str
 
     def __post_init__(self) -> None:
-        self.MiscellaneousTextData = MiscellaneousTextData(**self.MiscellaneousTextData)
+        if isinstance(self.MiscellaneousTextData, dict):
+            self.MiscellaneousTextData = MiscellaneousTextData(
+                **self.MiscellaneousTextData
+            )
 
 
 @dataclass
@@ -462,7 +458,7 @@ class CardDataField:
 
     name: str
     value_fn: Callable[  # noqa: E731
-        [EIDCardData | GCCIDCardData], str
+        [EIDCardData | GCCIDCardData], Any
     ] = lambda val: val
 
 
@@ -625,19 +621,27 @@ CARDDATA_FIELDS: tuple[CardDataField, ...] = (
     CardDataField(
         name="PassportIssueDate",
         value_fn=lambda val: datetime.strptime(
-            val.ModifiableData.PassportIssueDate  # TODO check if value is not there
-            if isinstance(val, EIDCardData)
-            else val.PassportIssueDate,
-            "%d/%m/%Y",
+            val.ModifiableData.PassportIssueDate, "%d/%m/%Y"
+        )
+        if isinstance(val, EIDCardData)
+        and val.ModifiableData.PassportIssueDate is not None
+        else (
+            datetime.strptime(val.PassportIssueDate, "%d/%m/%Y")
+            if isinstance(val, GCCIDCardData) and val.PassportIssueDate is not None
+            else None
         ),
     ),
     CardDataField(
         name="PassportExpiryDate",
         value_fn=lambda val: datetime.strptime(
-            val.ModifiableData.PassportExpiryDate
-            if isinstance(val, EIDCardData)
-            else val.PassportExpiryDate,
-            "%d/%m/%Y",
+            val.ModifiableData.PassportExpiryDate, "%d/%m/%Y"
+        )
+        if isinstance(val, EIDCardData)
+        and val.ModifiableData.PassportExpiryDate is not None
+        else (
+            datetime.strptime(val.PassportExpiryDate, "%d/%m/%Y")
+            if isinstance(val, GCCIDCardData) and val.PassportExpiryDate is not None
+            else None
         ),
     ),
     CardDataField(
@@ -671,8 +675,6 @@ class CardData:
     PlaceOfBirthEnglish: str = ""
     PlaceOfBirthArabic: str = ""
     OccupationEnglish: str = ""
-    OccupationArabic: str = ""
-    CompanyNameEnglish: str = ""
     OccupationArabic: str = ""
     CompanyNameEnglish: str = ""
     CompanyNameArabic: str = ""

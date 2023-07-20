@@ -10,8 +10,7 @@ Python package that interfaces with the Gulf ID and EID card reader service. It 
 
 ```python
 import aiohttp
-from gulf_id_scanner.client import Client
-from .execptions import ServiceError
+from gulf_id_scanner import Client, ServiceError
 
 session = aiohttp.ClientSession()
 client = Client(host="192.168.3.45", web_session=session)
