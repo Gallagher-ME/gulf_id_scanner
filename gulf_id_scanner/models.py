@@ -446,7 +446,7 @@ class GCCIDCardData:
     ErrorDescription: str
 
     def __post_init__(self) -> None:
-        if isinstance(self.MiscellaneousTextData, dict):
+        if isinstance(self.MiscellaneousTextData, dict) and self.MiscellaneousTextData:
             self.MiscellaneousTextData = MiscellaneousTextData(
                 **self.MiscellaneousTextData
             )
@@ -689,3 +689,37 @@ class CardData:
         """Fill in field values from card data."""
         for card_field in CARDDATA_FIELDS:
             setattr(self, card_field.name, card_field.value_fn(self.card_data))
+
+    @staticmethod
+    def as_dict() -> dict[str, str]:
+        """Return dict of fields with their recommended type."""
+        return {
+            "IdNumber": "string",
+            "IssueDate": "date",
+            "ExpiryDate": "date",
+            "CardNumber": "string",
+            "FirstNameEnglish": "string",
+            "MiddleNameEnglish": "string",
+            "LastNameEnglish": "string",
+            "FirstNameArabic": "string",
+            "MiddleNameArabic": "string",
+            "LastNameArabic": "string",
+            "Gender": "string",
+            "Email": "email",
+            'Mobile': "mobile",
+            "DateOfBirth": "date",
+            "NationalityEnglish": "string",
+            "NationalityArabic": "string",
+            "PlaceOfBirthEnglish": "string",
+            "PlaceOfBirthArabic": "string",
+            "OccupationEnglish": "string",
+            "OccupationArabic": "string",
+            "CompanyNameEnglish": "string",
+            "CompanyNameArabic": "string",
+            "SponsorUnifiedNumber": "string",
+            "SponsorName": "string",
+            "PassportNumber": "string",
+            "PassportIssueDate": "date",
+            "PassportExpiryDate": "date",
+            "Photo": "image",
+        }
