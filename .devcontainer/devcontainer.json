@@ -19,13 +19,13 @@
         "esbenp.prettier-vscode",
         "GitHub.vscode-pull-request-github",
         "eamodio.gitlens",
-        "ms-python.black-formatter"
+        "charliermarsh.ruff"
       ],
       "settings": {
         "editor.tabSize": 2,
         "editor.renderWhitespace": "boundary",
         "[python]": {
-          "editor.defaultFormatter": "ms-python.black-formatter"
+          "editor.defaultFormatter": "charliermarsh.ruff"
         },
         "python.linting.enabled": true,
         "python.formatting.provider": "black",
